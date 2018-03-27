@@ -1,0 +1,836 @@
+PROSPER LOAN
+-------
+by TONG LI
+
+# Introduction
+
+This data set contains 113,937 loans with 81 variables on each loan, including loan amount, borrower rate (or interest rate), current loan status, borrower income, borrower employment status, borrower credit history, and the latest payment information.
+
+In this project, I am going to explore the relationship between the loan amount (LoanOriginalAmount in the dataset) and some other variables selected from the original dataset.
+
+# Data Analysis
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+library(ggplot2); theme_set(theme_bw())
+library(psych)
+library(tidyr)
+library(dplyr)
+library(memisc)
+```
+
+## 1. Variables selection through correlation matrix and univariate plots
+
+### 1.1 General selection
+
+Since the dataset contains many variables, before doing any data analysis I selected 10-15 variables I would like to explore. First, I excluded all variables with proportion of missing values larger than 10%.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load the Data
+loan <- read.csv('prosperLoanData.csv', na.strings=c("", " "))
+dim(loan)
+#select variables with NA < 10%
+loan2<-loan[, colMeans(is.na(loan))<0.1] 
+```
+
+### 1.2 Numeric variables selection
+Second, in the variables with missing values fewer than 10%, I selected all the numeric variables and explore their correlation with LoanOriginalAmount. 
+Because there are too many variables and an ordinary correlation matrix will be too big (47 by 47), I will use a flattened correlation table instead. This table contains four columns: (variable) i, (variable) j, cor, & p. Each row contains the correlation coefficient and the p value of one pair of the numeric variables.
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Select numeric variables
+facs <- sapply(loan2, is.factor)
+num<-loan2[ , !facs]
+# Generate correlation matrix 
+flattenSquareMatrix <- function(m) {
+    if( (class(m) != "matrix") | (nrow(m) != ncol(m))) stop("Must be a square matrix.") 
+    if(!identical(rownames(m), colnames(m))) stop("Row and column names must be equal.")
+    ut <- upper.tri(m)
+    data.frame(i = rownames(m)[row(m)[ut]],
+               j = rownames(m)[col(m)[ut]],
+               cor=t(m)[ut],
+               p=m[ut])
+}
+
+
+examp <- corr.test(num[, 2:47]) 
+mat.rp <- lower.tri(examp$r)*examp$r + t(lower.tri(examp$p)*examp$p) 
+# transform the matrix into a 4 column matrix with row/column indices, correlation, and p-value. store the results in Matrix
+Matrix <-flattenSquareMatrix(mat.rp)
+
+colMatrix <- Matrix[order(Matrix$i, Matrix$j, Matrix$cor),] 
+```
+
+By doing the above steps, in addition to LoanOriginalAmount, I selected 6 numeric variables whose correlation magnitude with LoanOriginalAmount were approximately between 0.3 and 0.9.
+
+### 1.3 Factors selection
+
+Next, I selected appropriate factors by plotting their distributions and excluding the ones with extreme ceiling or floor.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+# factor variables
+factors<-loan2[ , facs]
+## exclude id related variables
+factors<-factors[, -c(1,13,16)]
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE, eval=FALSE}
+## Plot every factorial variable and select based on the distribution
+qplot(x=ListingCreationDate, data=factors)
+qplot(x=LoanStatus, data=factors)
+qplot(x=BorrowerState, data=factors)
+qplot(x=Occupation, data=factors)
+qplot(x=EmploymentStatus, data=factors)
+qplot(x=IsBorrowerHomeowner, data=factors)
+qplot(x=CurrentlyInGroup, data=factors)
+qplot(x=DateCreditPulled, data=factors)
+str(factors$DateCreditPulled)
+qplot(x=FirstRecordedCreditLine, data=factors)
+qplot(x=IncomeRange, data=factors)
+qplot(x=IncomeVerifiable, data=factors)
+qplot(x=LoanOriginationDate, data=factors)
+qplot(x=LoanOriginationQuarter, data=factors)
+```
+
+Four factors were selected.
+
+Then the 7 numeric variales and 4 factors were selected from the dataset. A new variable "LoanOriginalQuarter" was created from the original variable "LoanOriginationQuarter", with only Q1, Q2, Q3 and Q4 information in the new variable but not the specific years.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Combine num2 and factors, select the wanted variables based on the Univariate Plots
+loan2<-separate(loan2, LoanOriginationQuarter, 
+                into=c('LoanOriginalQuarter', 'LoanOriginationYear'),
+                sep=' ')
+
+data_var<-loan2[, c('LoanOriginalAmount', 'MonthlyLoanPayment',
+                    'Investors', 'LP_CustomerPayments',
+                    'LP_ServiceFees', 'Term',
+                    'CreditScoreRangeLower', 'IncomeRange',
+                    'IsBorrowerHomeowner','LoanOriginalQuarter', 
+                    'EmploymentStatus')]
+data_var$LoanOriginalQuarter<-as.factor(data_var$LoanOriginalQuarter)
+```
+
+## 2. Univariate Analysis
+
+### 2.1 Univariate Plots
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+str(data_var)
+summary(data_var)
+```
+
+#### Histogram of numeric variables: 
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=LoanOriginalAmount, data=data_var)
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+ggplot(aes(x=MonthlyLoanPayment), data=data_var) +
+    geom_histogram(boundary=0)
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+ggplot(aes(x=Investors), data=data_var) +
+    geom_histogram(boundary=0)
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=LP_CustomerPayments, data=data_var)
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=LP_ServiceFees, data=data_var)
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=Term, data=data_var)
+```
+
+Although Term is a numeric variable, it actually only has three levels: 12, 36, and 60. Therefore I plot Term again as a factor
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_var$Term<-factor(data_var$Term)
+ggplot(aes(x=Term), data=data_var) +
+    geom_bar() 
+```
+
+
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+ggplot(aes(x=CreditScoreRangeLower), data=data_var) +
+    geom_histogram(boundary=0)
+```
+
+
+All those numeric variables have skewed distributions (except for Term), and they are also on very different scales. Therefore they need to be standardized and transformed. Before doing the log transformation for each variable, an appropriate integer will be added to each datum based on the range of the standardized values to avoid NAN generated by zero values. The new distributions (after being standardized and log transformed) are as follows:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+scaled_num<-scale(data_var[, c(1:5,7)])
+scaled_num<-as.data.frame(scaled_num)
+
+summary(scaled_num)
+trans_num<-scaled_num
+
+trans_num$LoanOriginalAmount<-log10(scaled_num$LoanOriginalAmount+2)
+qplot(LoanOriginalAmount, data=trans_num) 
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trans_num$MonthlyLoanPayment<-log10(scaled_num$MonthlyLoanPayment+2)
+qplot(MonthlyLoanPayment, data=trans_num) 
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trans_num$Investors<-log10(scaled_num$Investors+1)
+qplot(Investors, data=trans_num) 
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trans_num$LP_CustomerPayments<-log10(scaled_num$LP_CustomerPayments+1)
+qplot(LP_CustomerPayments, data=trans_num) 
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trans_num$LP_ServiceFees<-log10(scaled_num$LP_ServiceFees+11)
+qplot(LP_ServiceFees, data=trans_num) 
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+trans_num$CreditScoreRangeLower<-
+    log10(scaled_num$CreditScoreRangeLower+11)
+qplot(CreditScoreRangeLower, data=trans_num) 
+```
+
+
+
+#### Distribution of factors:
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=IncomeRange, data=data_var)
+```
+
+The order of the IncomeRange levels needs to be rearranged. In addition, the labels on the x axis were too long and some were overlapped. After adjusted it was plotted again:
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+data_var$IncomeRange <- factor(data_var$IncomeRange, levels = c('Not employed', '$0', '$1-24,999', '$25,000-49,999', '$50,000-74,999', '$75,000-99,999', '$100,000+', 'Not displayed'))
+qplot(x=IncomeRange, data=data_var) +
+    scale_x_discrete(labels = c("Not employed", "$0", "$1+", "$25,000+", "$50,000+", "$75,000+", "$100,000+", "Not displayed"))
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=IsBorrowerHomeowner, data=data_var)
+```
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=LoanOriginalQuarter, data=data_var)
+```
+
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+qplot(x=EmploymentStatus, data=data_var)
+```
+
+The types of Employment Status were confusing: 'Full-time', 'Part-time' and 'Self-employed' should all be considered as 'Employed'. Therefore, another variable was created in which all the three types were labeled as 'Employed' as well.
+
+```{r echo=FALSE, message = FALSE, warning = FALSE}
+data_var$EmploymentStatus<-as.character(data_var$EmploymentStatus)
+data_var["EmploymentStatus2"]<-NA
+for (i in 1: nrow(data_var)) {
+    if (!is.na(data_var$EmploymentStatus[i])) {
+        if (data_var$EmploymentStatus[i] == "Part-time" | 
+            data_var$EmploymentStatus[i] == "Full-time" |
+            data_var$EmploymentStatus[i] == "Self-employed") {
+                data_var$EmploymentStatus2[i] <- "Employed"
+            }
+        else {
+            data_var$EmploymentStatus2[i] <- data_var$EmploymentStatus[i]
+            }
+        
+    }
+}
+
+data_var$EmploymentStatus2 <- factor(data_var$EmploymentStatus2, 
+                                     levels = c('Employed', 'Retired',
+                                                'Not employed', 'Other',
+                                                'Not available', NA))
+qplot(x=EmploymentStatus2, data=data_var, xlab="Employment Status Modified")
+```
+
+However, since the loans with a status of 'Employed' were much more than the loans with other kinds of status, the Modified Employment Status was probably not a very good variable, if I want to explore its relationship with LoanOriginalAmount.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#newdata to store all variables will use in next step
+newdata<-cbind(trans_num, data_var[, c(6,8:10,12)])
+```
+
+
+### 2.2 Analysis
+
+#### What is the structure of your dataset?
+There are 113,937 records in my dataset, with 11 variables. Seven variables are numeric variables, including LoanOriginalAmount, MonthlyLoanPayment, Investors, LP_CustomerPayments, LP_ServiceFees, Term, and CreditScoreRangeLower. Four variables are factors; their names and levels are as follows:
+
+**IncomeRange**: Not employed, $0, $1-24,999, $25,000-49,999, $50,000-74,999, $75,000-99,999, $100,000+, Not displayed 
+**IsBorrowerHomeowner**: Ture, False       
+**LoanOriginalQuarter**: Q1, Q2, Q3, Q4    
+**EmploymentStatus2**: Employed, Retired, Not employed, Other, Not available, NA (created based on EmploymentStatus)
+
+Other observations:       
+1. The numeric variables are correlated with LoanOriginalAmount, with the magnitude of correlation approximately between 0.3 and 0.9.   
+2. The distribution of most numeric variables are not normal, and are on very different scales. Therefore, standardization and log transformation were used on LoanOriginalAmount, MonthlyLoanPayment, Investors, LP_CustomerPayments  LP_ServiceFees, and CreditScoreRangeLower.       
+3. In the modified Employment Status (EmploymentStatus2), the 'Employed' status takes a proportion of more than 80%, therefore it might not be a very good predictor.     
+
+#### What is/are the main feature(s) of interest in your dataset? What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+The main feature of interest is the origination amount of the loan (LoanOriginalAmount). I'd like to see which features are best for predicting the original amount of loan. I have already selected numeric variables which are moderately correlated to LoanOriginalAmount, and factors without extreme distributions, and I want to see whether some combination of these variables can be predict the original amount of loan.
+
+#### Did you create any new variables from existing variables in the dataset?
+Two new variables were created:                  
+1. LoanOriginalQuarter: created from LoanOriginateQuarter. The new variable only contains in which quarter (Q1, Q2, Q3 or Q4) the loan was made, without the year information.                
+2. EmploymentStatus2: created from EmploymentStatus. The original variable includes 'Employed', 'Full-time', 'Part-time', 'Self-employed' and several other levels. However this is confusing because obviously 'Employed' should include the latter three levels. Therefore in the new variable, the level 'Full-time', 'Part-time' and 'Self-employed' were all relabeled as 'Employed'.
+
+
+## 3. Bivariate Analysis
+
+### 3.1 Bivariate Plots
+
+From now on, I will use the new data set created from the previous step which contains transformed numeric variables and adjusted factors. 
+
+Generally explore the relationship between the variables in the dataset:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pairs.panels(newdata)
+```
+
+After standardization and log transformation, some correlations were different from the correlation with original variables. Next, I will used plots to show the relationship between the transformed variables:  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Scatterplot_Function}
+plot.scatter <- function(df, x.var, y.var){
+  ggplot(aes_string(x=x.var, y=y.var), 
+       data=df) +
+    geom_point(alpha=1/5) +
+    geom_smooth(method='lm', color='red') 
+}
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.scatter(newdata, 'MonthlyLoanPayment', 'LoanOriginalAmount')
+```
+
+
+Although the correlation between LoanOriginalAmount and MonthlyLoanPayment is high (above 0.9), this plot shows that the relationship between the two variables is probably moderated by a third variable. It looks that three regression lines are needed here to capture the linear relationship between LoanOriginalAmount and MonthlyLoanPayment.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.scatter(newdata, 'Investors', 'LoanOriginalAmount')
+```
+
+This plot shows a weak positive correlation between the two variables.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.scatter(newdata, 'LP_CustomerPayments', 'LoanOriginalAmount')
+```
+
+This plot shows a weak-to-medium correlation between the two variables.
+
+
+Scatter plot to show the relationship between ServiceFees and LoanOriginalAmount:
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.scatter(newdata, 'LP_ServiceFees', 'LoanOriginalAmount') +
+    coord_cartesian(xlim=c(0.5, 1.1), ylim=c(-0.09, 0.85))
+```
+
+This plot shows a medium negative correlation between the two variables.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.scatter(newdata, 'CreditScoreRangeLower', 'LoanOriginalAmount') +
+    coord_cartesian(ylim=c(-0.09,0.8))
+```
+
+This plot shows a positive medium correlation between the two variables. It looks that the correlation was affected by extreme values.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x=Term, y=LoanOriginalAmount, group = Term),
+       data=newdata) + 
+    geom_boxplot(fill='bisque') +
+    stat_summary(fun.y = mean, geom="point", color = "blue")
+```
+
+This plot shows that the amount of loan for 12, 36 and 60 months of term was different, with more amount corresponding to longer term.
+
+To explore the Loan Original Amount between different lengths of Term:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(aov(LoanOriginalAmount ~ Term, data=newdata))
+pairwise.t.test(newdata$LoanOriginalAmount, newdata$Term,
+                p.adjust="bonferroni")
+```
+
+So ANOVA test shows that Loan Amount significantly increases with Term length.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x=IncomeRange, y=LoanOriginalAmount), data=newdata) +
+    geom_boxplot(fill="bisque") +
+    stat_summary(fun.y = mean, geom="point", color="blue") +
+    scale_x_discrete(labels=c("Not employed", "$0", "$1+", "$25,000+", "$50,000+", "$75,000+", "$100,000+", "Not displayed"))
+```
+
+The general trend was that with higher Income, the mean and variance of loan amount was also higher. The exception was at the income of 0. This might be because people receive 0 in their income for different reasons (temparory job, internship, etc.), so for the zero-income people their loan amount may be more likely to depend on other variables.
+
+To explore the difference of loan amount by income range:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(aov(LoanOriginalAmount ~ IncomeRange, data=newdata))
+pairwise.t.test(newdata$LoanOriginalAmount, newdata$IncomeRange,
+                p.adjust="bonferroni")
+```
+
+The ANOVA test shows that from $1-24,999 above, loan amount increases with income range. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x=IsBorrowerHomeowner, y=LoanOriginalAmount), 
+       data=newdata) +
+    geom_boxplot(fill="bisque") +
+    stat_summary(fun.y = mean, geom="point", color="blue")
+```
+
+The loan amount for home owners looks larger than that for non home owners, and larger variance of loan amount was found for home owners. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+t.test(newdata$LoanOriginalAmount~newdata$IsBorrowerHomeowner)
+```
+
+The independent t test confirms that overall, home owners have larger loan amount.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x=LoanOriginalQuarter, y=LoanOriginalAmount), 
+       data=newdata) +
+    geom_boxplot(fill="bisque") +
+    stat_summary(fun.y = mean, geom="point", color="blue")
+```
+
+The loan amount in different quarter was not very different from one another.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(aov(LoanOriginalAmount ~ LoanOriginalQuarter, data=newdata))
+pairwise.t.test(newdata$LoanOriginalAmount, newdata$LoanOriginalQuarter,
+                p.adjust="bonferroni")
+newdata %>% group_by(LoanOriginalQuarter) %>%
+    summarise(mean_amount=mean(LoanOriginalAmount), n=n()) 
+```
+
+The AVOVA test shows difference of loan amount among quarters. To be specific, loan amount in Q1 > Q4 > Q3 > Q2. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(aes(x=EmploymentStatus2, y=LoanOriginalAmount), data=newdata) +
+    geom_boxplot(fill="bisque") +
+    stat_summary(fun.y = mean, geom="point", color="blue")
+```
+
+From this plot, the loan amount of employed borrowers has larger variance and higher mean compared to that of borrowers with other employment status.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(aov(LoanOriginalAmount ~ EmploymentStatus2, data=newdata))
+pairwise.t.test(newdata$LoanOriginalAmount, newdata$EmploymentStatus2,
+                p.adjust="bonferroni")
+```
+
+So employed borrowers tend to have larger amount of loan compared to borrowers with other employment status. No difference is found between retired and not employed borrowers.
+
+In addition to the main variable (LoanOriginalAmount) that I focused on, I also looked into the relationship between other variables, and found a relationship between pre charge-off cumulative gross payments made by the borrower on the loan (LP_CustomerPayments) and Cumulative service fees paid by the investors who have invested in the loan (LP_ServiceFees).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.scatter(newdata, 'LP_CustomerPayments', 'LP_ServiceFees')
+```
+
+
+### 3.2 Analysis
+
+#### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+Observed relationships are as follows:           
+1. The plots revealed a strong positive correlation between LoanOriginalAmount and MonthlyLoanPayment, which means that people with larger amount of original loan tend to schedule larger amount of monthly loan payment.                      
+2. A weak positive correlation was found between LoanOriginalAmount and the number of investors that funded the loan, which shows that the amount of loan tends to be larger with more investors.               
+3. A weak positive correlation was found between LoanOriginalAmount and pre charge-off cumulative gross payments made by the borrower (LP_CustomerPayments), which means that the amount of loan tends to be larger if the borrower has made higher pre charge-off payment.        
+4. A medium negative correlation was found between LoanOriginalAmount and cumulative service fees paid by the investors who have invested in the loan, which means that the amount of loan tends to be larger if the investors have paid more service fees.                        
+5. A weak positive correlation was found between LoanOriginalAmount and the lower value representing the range of the borrower's credit score as provided by a consumer credit rating agency. It means that borrowers with higher credit score tend to have larger amount of loan.        
+6. Larger amount of loan tends to have longer term.         
+7. Borrowers with their own home tend to have larger amount of loan.    
+8. In which quarter the loan was created seems to affect the amount of loan.                        
+9. In general, more income is related to larger amount of loan.        
+10. Borrowers who are employed tend to have larger amount of loan.
+
+
+#### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+An interesting relationship is that there is a relatively strong negative correlation between pre charge-off cumulative gross payments made by the borrower on the loan and cumulative service fees paid by the investors who have invested in the loan. Therefore, if the borrower pay more for the pre charge-off fees, the investors will pay less for the service fees.
+
+
+#### What was the strongest relationship you found?
+The strongest relationship was the correlation between LoanOriginalAmount and MonthlyLoanPayment.
+
+
+## 4. Multivariate Analysis
+
+### 4.1 Multivariate Plots
+
+The scatter plot of MonthlyLoanPayment and LoanOriginalAmount showed that three lines were possibly needed to capture the linear relationship between the two variables. Since Term was the only variable with three levels, I first investigated whether different levels of Term would affect the relationship between the two variables.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter <- function(df, x.var, y.var, facet){
+  ggplot(aes_string(x=x.var, y=y.var), data=df) +
+        coord_cartesian(ylim=c(-0.09, 0.85)) +
+        geom_point(alpha=1/5) +
+        facet_wrap(as.formula(paste('~', facet))) +
+        geom_smooth(method='lm', color='red') 
+}
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'MonthlyLoanPayment', 
+                  'LoanOriginalAmount', 'Term')
+```
+
+From the plot, the correlation between LoanOriginalAmount and MonthlyLoanPayment exhibited very good linear relationship on each level of Term. Therefore there should be a interaction between Term and MonthlyLoanPayment when predicting LoanOriginalAmount.  
+
+
+To see whether the relationship between Investors and LoanOriginalAmount is moderated by other variables, I tried several moderators and the plots were as follows:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'Investors', 'LoanOriginalAmount', 'Term')
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'Investors', 'LoanOriginalAmount', 
+                  'IncomeRange')
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'Investors', 
+                  'LoanOriginalAmount', 'IsBorrowerHomeowner')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'Investors', 
+                  'LoanOriginalAmount', 'LoanOriginalQuarter')
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'Investors', 
+                  'LoanOriginalAmount', 'EmploymentStatus2')
+```
+
+From the above plots, the relationship between Investors and LoanOriginalAmount might be moderated by Term and IncomeRange. Other variables did not show a strong moderating effect. 
+
+
+To see whether the relationship between LP_CustomerPayments and LoanOriginalAmount is moderated by other variables:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_CustomerPayments', 
+                  'LoanOriginalAmount', 'Term')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_CustomerPayments', 
+                  'LoanOriginalAmount', 'IncomeRange')
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_CustomerPayments', 
+                  'LoanOriginalAmount', 'IsBorrowerHomeowner')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_CustomerPayments', 
+                  'LoanOriginalAmount', 'LoanOriginalQuarter')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_CustomerPayments', 
+                  'LoanOriginalAmount', 'EmploymentStatus2')
+```
+
+
+Although in some of the above plots, the regression lines on different levels of a thid variable showed different slopes, more careful examination of the patterns of the dots suggested that most of the different slopes were probably driven by some outliers, or the extreme unbalance between the number of datum in each condition, but not the difference in the patterns of the relationship. Therefore, the only variables was found to moderate the relationship between LP_CustomerPayments and LoanOriginalAmount was LoanOriginalQuarter.
+
+
+To see whether the relationship between LP_ServiceFees and LoanOriginalAmount is moderated by other variables:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_ServiceFees', 
+                  'LoanOriginalAmount', 'Term') +
+    coord_cartesian(xlim=c(0.6, 1.1), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_ServiceFees', 
+                  'LoanOriginalAmount', 'IncomeRange') +
+    coord_cartesian(xlim=c(0.6, 1.1), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_ServiceFees', 
+                  'LoanOriginalAmount', 'IsBorrowerHomeowner') +
+    coord_cartesian(xlim=c(0.6, 1.1), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_ServiceFees', 
+                  'LoanOriginalAmount', 'LoanOriginalQuarter') +
+    coord_cartesian(xlim=c(0.6, 1.1), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'LP_ServiceFees', 
+                  'LoanOriginalAmount', 'EmploymentStatus2') +
+    coord_cartesian(xlim=c(0.6, 1.1), ylim=c(-0.09, 0.85))
+```
+
+
+This situation was similar to the previous one. No variable was found to moderate the relationship between LP_ServiceFees and LoanOriginalAmount.
+
+
+To see whether the relationship between CreditScoreRangeLower and LoanOriginalAmount was moderated by other variables:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'CreditScoreRangeLower', 
+                  'LoanOriginalAmount', 'Term') +
+    coord_cartesian(xlim=c(0.8, 1.2), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'CreditScoreRangeLower', 
+                  'LoanOriginalAmount', 'IncomeRange') +
+    coord_cartesian(xlim=c(0.8, 1.2), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'CreditScoreRangeLower', 
+                  'LoanOriginalAmount', 'IsBorrowerHomeowner') +
+    coord_cartesian(xlim=c(0.8, 1.2), ylim=c(-0.09, 0.85))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'CreditScoreRangeLower', 
+                  'LoanOriginalAmount', 'LoanOriginalQuarter') +
+    coord_cartesian(xlim=c(0.8, 1.2), ylim=c(-0.09, 0.85))
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+plot.grid.scatter(newdata, 'CreditScoreRangeLower', 
+                  'LoanOriginalAmount', 'EmploymentStatus2') +
+    coord_cartesian(xlim=c(0.8, 1.2), ylim=c(-0.09, 0.85))
+```
+
+
+The situation looked like the ones with LP_ServiceFees, no other variable was found to moderate the relationship between CreditScoreRangeLower and LoanOriginalAmount.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_by_Term_Owner<-newdata %>%
+  group_by(Term, IsBorrowerHomeowner) %>%
+  summarise(mean_amount=mean(LoanOriginalAmount),
+            n=n()) %>%
+  ungroup() %>%
+  arrange(Term)
+
+ggplot(aes(x=Term, y=mean_amount), data=data_by_Term_Owner) +
+    geom_point(shape=19) +
+    geom_line(aes(color=IsBorrowerHomeowner), size=1)
+```
+
+It seems that there is an interaction between Term and whether the borrower is a home owner.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_by_Income_Term<-newdata %>%
+  group_by(IncomeRange, Term) %>%
+  summarise(mean_amount1=mean(LoanOriginalAmount),
+            n=n()) %>%
+  ungroup() %>%
+  arrange(IncomeRange)
+
+ggplot(aes(x=IncomeRange, y=mean_amount1), data=data_by_Income_Term) +
+    geom_point(shape=19) +
+    geom_line(aes(group=Term, color=Term)) +
+    scale_x_discrete(labels=c("Not employed", "$0", "$1+", "$25,000+", "$50,000+", "$75,000+", "$100,000+", "Not displayed"))
+
+```
+
+It seems that the length of term did not affect the relationship between income range and loan amount.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_by_Quarter_Term<-newdata %>%
+  group_by(LoanOriginalQuarter, Term) %>%
+  summarise(mean_amount1=mean(LoanOriginalAmount),
+            n=n()) %>%
+  ungroup() %>%
+  arrange(LoanOriginalQuarter)
+
+ggplot(aes(x=LoanOriginalQuarter, y=mean_amount1), data=data_by_Quarter_Term) +
+    geom_point(shape=19) +
+    geom_line(aes(group=Term, color=Term)) 
+    
+```
+
+Again, the length of term did not affect the relationship between loan amount and in which quarter the loan was created.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_by_Income_Owner<-newdata %>%
+  group_by(IncomeRange, IsBorrowerHomeowner) %>%
+  summarise(mean_amount1=mean(LoanOriginalAmount),
+            n=n()) %>%
+  ungroup() %>%
+  arrange(IncomeRange)
+
+ggplot(aes(x=IncomeRange, y=mean_amount1), data=data_by_Income_Owner) +
+    geom_point(shape=19) +
+    geom_line(aes(group=IsBorrowerHomeowner,
+                  color=IsBorrowerHomeowner)) +
+    scale_x_discrete(labels=c("Not employed", "$0", "$1+", "$25,000+", "$50,000+", "$75,000+", "$100,000+", "Not displayed")) +
+    theme(legend.position="bottom", legend.box = "horizontal")
+
+```
+
+It seems that whether the borrower is a home owner did not affect the relationship between the income range and the amount of loan.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+data_by_Income_Quarter<-newdata %>%
+  group_by(IncomeRange, LoanOriginalQuarter) %>%
+  summarise(mean_amount1=mean(LoanOriginalAmount),
+            n=n()) %>%
+  ungroup() %>%
+  arrange(IncomeRange)
+
+ggplot(aes(x=IncomeRange, y=mean_amount1), 
+       data=data_by_Income_Quarter) +
+    geom_point(shape=19) +
+    geom_line(aes(group=LoanOriginalQuarter,
+                  color=LoanOriginalQuarter)) +
+    scale_x_discrete(labels=c("Not employed", "$0", "$1+", "$25,000+", "$50,000+", "$75,000+", "$100,000+", "Not displayed")) +
+    theme(legend.position="bottom", legend.box = "horizontal")
+
+```
+
+It seems that in which quarter the loan was created did not affect the relationship between borrowers' income range and the amount of loan.
+
+
+### 4.2 Analysis
+
+#### Talk about some of the relationships you observed in this part of the investigation. Were there any interesting or surprising interactions between features?
+The observed moderating effects/interactions are as follows:     
+1. The relationship between loan amount and monthly payment was moderated by the term of the loan. With longer loan term, larger amount of loan tend to relate even more monthly payment.          
+2. The relationship between loan amount and number of investors was moderated by term length and borrowers' income. In general, more investors is related to larger amount of loan. With longer term, more investors is still related to larger amount of loan, but not as large as that with shorter term. On the other hand, with higher income, more investors is also related to larger amount of loan but the amount is not that large as for borrowers with less income.          
+3. An interaction was found between cumulative service fees paid by the investors who had invested in the loan and in which quarter the loan was created.                     
+4. An interaction was found between loan term and whether the borrower was a home owner.  
+
+
+#### Model with my dataset:
+Based on the univariate, bivariate and mutivariate analysis, I'm going to create a multiple regression model to predict original loan amount, including the variables that are correlated to LoanOriginalAmount, and the interactions found from the plots. I will add the variables to the model one after another, and then add interactions, meanwhile comparing the models using ANOVA. One noteworthy thing is that although EmploymentStatus2 seems to affect loan amount, more than 88% of the employment status was employed, therefore the unbalance between different employment status makes it not a good predictor. Therefore EmploymentStatus2 will not be added in the model.
+
+there is an apparant interaction between IsBorrowerHomeowner and Term, I will not include this in the model, for the variable IsBorrowerHomeowner itself seems not to be a good predictor based on other plots, therefore the interaction should not be included. The situation with Quarter is similar: although an interaction between LP_ServiceFees and LoanOriginalQuarter was found, based on the bivariate plot, Quarter does not affect loan amount, therefore quarter and its interaction will not be included in the model. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+newdata_comp<-newdata[complete.cases(newdata),]
+m0<-lm(LoanOriginalAmount ~ 1, data=newdata_comp)
+m1<-update(m0, . ~ . + MonthlyLoanPayment)
+m2<-update(m1, . ~ . + Investors)
+m3<-update(m2, . ~ . + LP_CustomerPayments)
+m4<-update(m3, . ~ . + LP_ServiceFees)
+m5<-update(m4, . ~ . + Term)
+m6<-update(m5, . ~ . + CreditScoreRangeLower)
+m7<-update(m6, . ~ . + IncomeRange)
+m8<-update(m7, . ~ . + IsBorrowerHomeowner)
+m9<-update(m8, . ~ . + LoanOriginalQuarter)
+m10<-update(m9, . ~ . + MonthlyLoanPayment:Term)
+m11<-update(m10, . ~ . + IncomeRange:Investors)
+m12<-update(m11, . ~ . + Term:Investors)
+m13<-update(m12, . ~ . + Term: IsBorrowerHomeowner)
+
+anova(m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12,m13)
+mtable(m1,m2,m3,m4, sdigits=3)
+mtable(m4,m5,m6,m7, sdigits=3)
+mtable(m7,m8,m9,m10, sdigits=3)
+mtable(m10,m11,m12,m13, sdigits=3)
+```
+
+
+The ANOVA test shows that all variables and interactions in the last model (m11) significantly improve the model, therefore all of them should be kept in the model. From the above table of regression models, we can see that MonthlyLoanPayment alone can explain 89.6% of the variance of LoanOriginalAmount. This is consistent with our plots, indicating that MonthlyLoanPayment is the strongest predictor. The second strong predictor is Term, which means that longer loan term is related to larger amount of loan. The final model explains 96.4% of the variance of loan amount.
+
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One, message=FALSE, warning=FALSE}
+qplot(x=LoanOriginalAmount, data=newdata) + 
+    ggtitle("The Distribution of Original Loan Amount
+After Standardization and Transformation") +
+    theme(plot.title = element_text(hjust=0.5))
+```
+
+### Description One
+LoanOriginalAmount is the predicted variable in this dataset. In this Plot One, this variable has been standardized and log transformed, because the original variable was right skewed, and was not on the same scale with all the other numeric variables in the dataset.
+
+### Plot Two
+```{r echo=FALSE, messsage=FALSE, warning=FALSE,Plot_Two}
+ggplot(aes(x=MonthlyLoanPayment, y=LoanOriginalAmount), data=newdata) +
+    geom_point(alpha=1/5) +
+    geom_smooth(method='lm',color='red') +
+    ggtitle("Relationship Between Monthly Payment and Loan Amount
+After Standardization and Transformation") +
+    theme(plot.title=element_text(hjust=0.5))
+```
+
+### Description Two
+This Plot two describes the strongest correlation related to the predicted variable (r > 0.9). Also, according to the plot, the relationship may be better captured by multiple regression lines, indicating that a third variable may moderate the relationship between monthly loan payment and loan amount.
+
+
+### Plot Three
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
+ggplot(aes(x=MonthlyLoanPayment, y=LoanOriginalAmount), data=newdata) +
+    geom_point() +
+    geom_smooth(method='lm',color='red') +
+    facet_wrap(~Term) +
+    ggtitle("Relationship Between Monthly Payment and Loan Amount 
+By Different Loan Term
+After Standardization and Transformation") +
+    theme(plot.title=element_text(hjust=0.5))
+```
+
+### Description Three
+This Plot Three confirms my speculation from Plot Two. The relationship between Monthly Payment and Loan Amount was moderated by Loan Term, which had three levels: 12 months, 36 months and 60 months. According to Plot Three, with longer loan term, the correlation between monthly payment and loan amount tends to be stronger. In addition, the color of points indicates that with higher income, the loan amount tends to be larger.
+
+
+# Reflection
+The series of analysis have shown that the original amount of loan is related to many other variables. This dataset contains six numeric variables in addition to the amount of loan, as well as four factors. After examining the relationship between loan amount and these other variables with plots and multiple linear regression, I found that all these variables predicted the amount of loan. 
+
+A strong positive correlation between LoanOriginalAmount and MonthlyLoanPayment was found, which means that people with larger amount of original loan are more likely to schedule larger amount of monthly loan payment. A further analysis showed that this relationship was moderated by the length of loan term. With longer loan term, larger amount of loan tends to relate to even more monthly payment. 
+
+The amount of loan also tends to be larger with more investors, and this relationship was found to be moderated by both loan term and borrow's income. With longer loan term, the correlation between number of investors and loan amount was not as strong as with shorter term; Similarly, with higher borrower's income, the correlation was not as strong as with less income.
+
+In general, higher income the borrower had, the larger amount of loan they tend to borrow. The employed borrowers and borrowers with higher credit score also tend to have larger amount of loan compared to borrowers with other employment status. Loan with longer term is also more likely has larger amount.
+
+Home owners tend to have larger amount of loan, but it is also affected by the length of loan term. To be specific, whether borrowers have their own home does not matter much for a short term loan (12 months), but it affects longer term loan (36 and 60 months).  
+
+The amount of loan also tends to be larger if the borrower has made higher pre charge-off payment, or if the investors have paid more service fees.
+
+The time when the loan was created in a year seems to affect the amount of loan, Q1 > Q4 > Q3 > Q2 although the difference between Q3 and Q2 was significant but very small.  
+
+Although the model has shown that using these variables and the interactions between several of them could predict a high proportion of the variance of loan amount, it still has limitations. Monthly payment explains more than 89% of the variance of loan amount and seems to be a very good predictor; However, there might be some variables that could predict both loan amount and monthly payment. For example, one could think that the borrower's average expense per month, their marital status, how many children they have, and their estates, stock and other properties should also predict both their monthly payment and loan amount. These variables are not include in the original dataset, for the original dataset does not focus on more personal information of the borrowers. I think with more information considered, the model can be much improved.  
